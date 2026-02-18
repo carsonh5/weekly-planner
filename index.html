@@ -190,13 +190,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 
   /* Grid: single column */
   .grid-wrapper{height:calc(100vh - 90px - 48px)}
+  .grid-scroll{touch-action:pan-y}
   .time-grid{grid-template-columns:var(--time-w) 1fr !important}
   .day-col{display:none !important}
-  .day-col.active-mobile{display:block !important;grid-column:2 !important}
+  .day-col.active-mobile{display:block !important;grid-column:2 !important;touch-action:pan-y}
   .time-label{font-size:9px;right:4px}
 
   /* Blocks: bigger touch targets */
-  .block{padding:5px 8px;border-left-width:4px;border-radius:8px}
+  .block{padding:5px 8px;border-left-width:4px;border-radius:8px;touch-action:pan-y}
   .block-title{font-size:13px;font-weight:600}
   .block-time{font-size:11px;margin-top:2px}
   .block-loc{font-size:11px}
@@ -435,7 +436,7 @@ const DEFAULT_BLOCKS=[
 /* ═══════════════ STATE ═══════════════ */
 const modal=$i('modal'),gridScroll=$i('gridScroll'),timeGrid=$i('timeGrid'),dayHeadersEl=$i('dayHeaders');
 let dayCols=[],dayHeaderEls=[],weekStart=getMonday(new Date()),data=null,drag=null,editing=null,moveState=null;
-let clipboard=null,undoStack=[],redoStack=[],MAX_UNDO=40;
+let clipboard=null,undoStack=[],redoStack=[],MAX_UNDO=40,lastTouchEnd=0;
 
 /* ═══════════════ UTILS ═══════════════ */
 function uid(){return Math.random().toString(36).slice(2,10)}
@@ -572,12 +573,13 @@ function buildGrid(){
     const col=document.createElement('div');col.className='day-col';col.dataset.day=d;col.style.gridColumn=d+2;col.style.gridRow='1';
     for(let h=0;h<=TOTAL_H;h++){const line=document.createElement('div');line.className='hour-line'+(h>0?' major':'');line.style.top=(h*HOUR_H)+'px';col.appendChild(line)}
     const tl=document.createElement('div');tl.className='time-line';tl.style.display='none';tl.dataset.timeLine='1';col.appendChild(tl);
-    col.addEventListener('mousedown',e=>startDrag(e,d,col));
+    col.addEventListener('mousedown',e=>{if(Date.now()-lastTouchEnd<500)return;startDrag(e,d,col)});
     col.addEventListener('touchstart',e=>{
       if(isMobile()){col._ts={x:e.touches[0].clientX,y:e.touches[0].clientY,t:Date.now()}}
       else{e.preventDefault();startDrag(e.touches[0],d,col)}
     },{passive:false});
     col.addEventListener('touchend',e=>{
+      lastTouchEnd=Date.now();
       if(!isMobile()||!col._ts)return;
       if(e.target.closest('.block')){col._ts=null;return}
       const tc=e.changedTouches[0],dx=Math.abs(tc.clientX-col._ts.x),dy=Math.abs(tc.clientY-col._ts.y);
@@ -590,10 +592,10 @@ function buildGrid(){
     timeGrid.appendChild(col);dayCols.push(col);
   }
   document.addEventListener('mousemove',onDragMove);document.addEventListener('mouseup',onDragEnd);
-  document.addEventListener('touchmove',e=>{if(drag)onDragMove(e.touches[0])},{passive:false});
+  document.addEventListener('touchmove',e=>{if(drag)onDragMove(e.touches[0])},{passive:true});
   document.addEventListener('touchend',e=>{if(drag)onDragEnd(e)});
   document.addEventListener('mousemove',onMoveMove);document.addEventListener('mouseup',onMoveEnd);
-  document.addEventListener('touchmove',e=>{if(moveState)onMoveMove(e.touches[0])},{passive:false});
+  document.addEventListener('touchmove',e=>{if(moveState)onMoveMove(e.touches[0])},{passive:true});
   document.addEventListener('touchend',e=>{if(moveState)onMoveEnd(e)});
 }
 
@@ -629,7 +631,7 @@ function renderBlocks(){
       rh.addEventListener('mousedown',e=>{e.stopPropagation();startResize(e,b,dayIdx,col)});
       rh.addEventListener('touchstart',e=>{if(isMobile())return;e.stopPropagation();e.preventDefault();startResize(e.touches[0],b,dayIdx,col)},{passive:false});
       el.appendChild(rh);
-      el.addEventListener('mousedown',e=>{if(!e.target.closest('.block-resize')){e.stopPropagation();startMoveOrClick(e,b,dayIdx,el)}});
+      el.addEventListener('mousedown',e=>{if(Date.now()-lastTouchEnd<500)return;if(!e.target.closest('.block-resize')){e.stopPropagation();startMoveOrClick(e,b,dayIdx,el)}});
       el.addEventListener('touchstart',e=>{
         if(!e.target.closest('.block-resize')){
           if(isMobile()){el._ts={x:e.touches[0].clientX,y:e.touches[0].clientY,t:Date.now()}}
@@ -637,6 +639,7 @@ function renderBlocks(){
         }
       },{passive:false});
       el.addEventListener('touchend',e=>{
+        lastTouchEnd=Date.now();
         if(!isMobile()||!el._ts)return;
         const tc=e.changedTouches[0],dx=Math.abs(tc.clientX-el._ts.x),dy=Math.abs(tc.clientY-el._ts.y);
         if(dx<10&&dy<10&&Date.now()-el._ts.t<300)openEdit(b);
