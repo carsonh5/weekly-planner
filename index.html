@@ -150,12 +150,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .btn-delete:hover{background:rgba(204,68,68,.06)}
 .btn-skip{background:none;color:var(--text2);border:1px solid var(--border);padding:0 14px}
 .btn-skip:hover{background:var(--bg)}
+.btn-copy{background:none;color:var(--accent);border:1px solid var(--accent);padding:0 14px}
+.btn-copy:hover{background:var(--accent-light)}
+
+/* ─── Toast ─── */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(60px);background:var(--text);color:#fff;padding:8px 18px;border-radius:8px;font-size:13px;font-weight:500;z-index:300;opacity:0;transition:all .3s;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ─── Undo/Redo ─── */
+.undo-ctrl{display:flex;align-items:center;gap:2px}
+.undo-btn{width:28px;height:28px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;color:var(--text2);padding:0}
+.undo-btn:hover:not(:disabled){background:var(--bg);color:var(--text)}
+.undo-btn:disabled{opacity:.3;cursor:default}
 
 /* ─── Responsive ─── */
 @media(max-width:768px){
   .header{padding:6px 10px;height:48px}
   .week-title{font-size:13px;min-width:0}
-  .legend,.zoom-ctrl,.sched-btn,.logout-btn{display:none}
+  .legend,.zoom-ctrl,.sched-btn,.logout-btn,.undo-ctrl{display:none}
   .notes-panel{width:180px}
   .notes-panel.closed{width:0}
   :root{--time-w:40px}
@@ -203,6 +215,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
     </div>
   </div>
   <div class="header-right">
+    <div class="undo-ctrl">
+      <button class="undo-btn" id="undoBtn" title="Undo (Ctrl+Z)" disabled>&#x21A9;</button>
+      <button class="undo-btn" id="redoBtn" title="Redo (Ctrl+Y)" disabled>&#x21AA;</button>
+    </div>
     <div class="zoom-ctrl">
       <button class="zoom-btn" id="zoomOut">&#8722;</button>
       <span class="zoom-pct" id="zoomPct">100%</span>
@@ -228,6 +244,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
   </div>
 </div>
 </div>
+
+<div class="toast" id="toast"></div>
 
 <!-- Block modal -->
 <div class="modal-overlay" id="modal">
@@ -264,6 +282,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
     </div>
     <div class="modal-foot">
       <div class="left">
+        <button class="btn btn-copy" id="copyBtn" style="display:none">Copy</button>
         <button class="btn btn-skip" id="skipBtn" style="display:none">Skip this week</button>
         <button class="btn btn-delete" id="deleteBtn">Delete</button>
       </div>
@@ -350,6 +369,7 @@ const DEFAULT_BLOCKS=[
 /* ═══════════════ STATE ═══════════════ */
 const modal=$i('modal'),gridScroll=$i('gridScroll'),timeGrid=$i('timeGrid'),dayHeadersEl=$i('dayHeaders');
 let dayCols=[],dayHeaderEls=[],weekStart=getMonday(new Date()),data=null,drag=null,editing=null,moveState=null;
+let clipboard=null,undoStack=[],redoStack=[],MAX_UNDO=40;
 
 /* ═══════════════ UTILS ═══════════════ */
 function uid(){return Math.random().toString(36).slice(2,10)}
@@ -382,11 +402,16 @@ function blocksForDay(day){
 
 /* Save: localStorage immediately, debounced Supabase */
 let saveTimer=null;
+function pushUndo(){undoStack.push(JSON.stringify(data));if(undoStack.length>MAX_UNDO)undoStack.shift();redoStack=[];updateUndoBtns()}
 function save(){
   localStorage.setItem('weekPlanner',JSON.stringify(data));
   clearTimeout(saveTimer);
   saveTimer=setTimeout(syncToSupabase,800);
+  updateUndoBtns();
 }
+function undo(){if(!undoStack.length)return;redoStack.push(JSON.stringify(data));data=JSON.parse(undoStack.pop());save();injectCatStyles();renderCatPicker();renderLegend();renderSchedSelect();render()}
+function redo(){if(!redoStack.length)return;undoStack.push(JSON.stringify(data));data=JSON.parse(redoStack.pop());save();injectCatStyles();renderCatPicker();renderLegend();renderSchedSelect();render()}
+function updateUndoBtns(){const u=$i('undoBtn'),r=$i('redoBtn');if(u)u.disabled=!undoStack.length;if(r)r.disabled=!redoStack.length}
 async function syncToSupabase(){
   try{await sb.from('planner_data').upsert({id:'default',data:data,updated_at:new Date().toISOString()})}catch(e){console.warn('Sync failed',e)}
 }
@@ -574,7 +599,7 @@ function onMoveEnd(){
   if(ms.ghost)ms.ghost.remove();if(ms.placeholder)ms.placeholder.remove();ms.el.style.opacity='';
   if(ms.targetDay!=null&&ms.targetStart!=null){
     const newEnd=ms.targetStart+ms.duration;
-    if(newEnd<=END_H*60){const list=ms.block._recurring?recurring():(data.weeks[weekKey(weekStart)]||[]);const t=list.find(x=>x.id===ms.block.id);if(t){t.day=ms.targetDay;t.startMin=ms.targetStart;t.endMin=newEnd;save()}}
+    if(newEnd<=END_H*60){pushUndo();const list=ms.block._recurring?recurring():(data.weeks[weekKey(weekStart)]||[]);const t=list.find(x=>x.id===ms.block.id);if(t){t.day=ms.targetDay;t.startMin=ms.targetStart;t.endMin=newEnd;save()}}
   }
   render();
 }
@@ -590,7 +615,7 @@ function startResize(e,block,day,col){drag={type:'resize',block,day,col,origEnd:
 function onDragMove(e){
   if(!drag)return;const y=e.clientY-drag.col.getBoundingClientRect().top;
   if(drag.type==='create'){drag.curMin=yToMin(y);updateDragPreview()}
-  else if(drag.type==='resize'){const ne=yToMin(y);if(ne>drag.block.startMin){drag.block.endMin=ne;save();renderBlocks()}}
+  else if(drag.type==='resize'){const ne=yToMin(y);if(ne>drag.block.startMin){if(!drag.undoPushed){pushUndo();drag.undoPushed=true}drag.block.endMin=ne;save();renderBlocks()}}
 }
 function onDragEnd(){
   if(!drag)return;
@@ -604,10 +629,15 @@ function updateDragPreview(){let{startMin,curMin,preview}=drag;let s=startMin,e=
 
 function openCreate(day,startMin,endMin){
   editing={mode:'create',day,startMin,endMin};$i('modalHead').textContent='New Block';
-  $i('blockTitle').value='';$i('blockLocation').value='';$i('daySelect').value=day;
+  if(clipboard){
+    $i('blockTitle').value=clipboard.title;$i('blockLocation').value=clipboard.location;
+    setCategory(clipboard.category);
+    endMin=Math.min(END_H*60,startMin+clipboard.duration);
+  }else{$i('blockTitle').value='';$i('blockLocation').value='';setCategory('personal')}
+  $i('daySelect').value=day;
   $i('startTime').value=minToTimeVal(startMin);$i('endTime').value=minToTimeVal(endMin);
-  setCategory('personal');$i('recurToggle').checked=false;
-  $i('deleteBtn').style.display='none';$i('skipBtn').style.display='none';
+  $i('recurToggle').checked=false;
+  $i('deleteBtn').style.display='none';$i('skipBtn').style.display='none';$i('copyBtn').style.display='none';
   updateModalTime();modal.classList.add('active');setTimeout(()=>$i('blockTitle').focus(),100);
 }
 function openEdit(b){
@@ -615,7 +645,7 @@ function openEdit(b){
   $i('blockTitle').value=b.title;$i('blockLocation').value=b.location||'';$i('daySelect').value=b.day;
   $i('startTime').value=minToTimeVal(b.startMin);$i('endTime').value=minToTimeVal(b.endMin);
   setCategory(b.category);$i('recurToggle').checked=!!b._recurring;
-  $i('deleteBtn').style.display='';$i('skipBtn').style.display=b._recurring?'':'none';
+  $i('deleteBtn').style.display='';$i('skipBtn').style.display=b._recurring?'':'none';$i('copyBtn').style.display='';
   $i('deleteBtn').textContent=b._recurring?'Delete all':'Delete';
   updateModalTime();modal.classList.add('active');$i('blockTitle').focus();
 }
@@ -628,6 +658,7 @@ function saveBlock(){
   const title=$i('blockTitle').value.trim()||'Untitled',location=$i('blockLocation').value.trim(),category=getCategory();
   const day=+$i('daySelect').value,startMin=timeValToMin($i('startTime').value),endMin=timeValToMin($i('endTime').value),isRecur=$i('recurToggle').checked;
   if(endMin<=startMin){alert('End time must be after start time');return}
+  pushUndo();
   if(editing.mode==='create'){
     const block={id:uid(),title,location,day,startMin,endMin,category};
     if(isRecur)recurring().push(block);else{const wk=weekKey(weekStart);if(!data.weeks[wk])data.weeks[wk]=[];data.weeks[wk].push(block)}
@@ -639,8 +670,17 @@ function saveBlock(){
   }
   save();render();closeModal();
 }
-function skipBlock(){if(!editing||editing.mode!=='edit'||!editing.block._recurring)return;const wk=weekKey(weekStart);if(!data.skips[wk])data.skips[wk]=[];if(!data.skips[wk].includes(editing.block.id))data.skips[wk].push(editing.block.id);save();render();closeModal()}
-function deleteBlock(){if(!editing||editing.mode!=='edit')return;const id=editing.block.id;setRecurring(recurring().filter(b=>b.id!==id));Object.keys(data.weeks).forEach(k=>{data.weeks[k]=data.weeks[k].filter(b=>b.id!==id)});Object.keys(data.skips).forEach(k=>{data.skips[k]=data.skips[k].filter(s=>s!==id)});save();render();closeModal()}
+function skipBlock(){if(!editing||editing.mode!=='edit'||!editing.block._recurring)return;pushUndo();const wk=weekKey(weekStart);if(!data.skips[wk])data.skips[wk]=[];if(!data.skips[wk].includes(editing.block.id))data.skips[wk].push(editing.block.id);save();render();closeModal()}
+function deleteBlock(){if(!editing||editing.mode!=='edit')return;pushUndo();const id=editing.block.id;setRecurring(recurring().filter(b=>b.id!==id));Object.keys(data.weeks).forEach(k=>{data.weeks[k]=data.weeks[k].filter(b=>b.id!==id)});Object.keys(data.skips).forEach(k=>{data.skips[k]=data.skips[k].filter(s=>s!==id)});save();render();closeModal()}
+
+/* ═══════════════ COPY / PASTE ═══════════════ */
+function copyBlock(){
+  if(!editing||editing.mode!=='edit')return;
+  const b=editing.block;
+  clipboard={title:b.title,location:b.location||'',category:b.category,duration:b.endMin-b.startMin};
+  showToast('Block copied');closeModal();
+}
+function showToast(msg){const t=$i('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800)}
 
 /* ═══════════════ SCHEDULES ═══════════════ */
 function renderSchedSelect(){const sel=$i('schedSelect');sel.innerHTML='';Object.keys(data.schedules).forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;if(n===data.activeSchedule)o.selected=true;sel.appendChild(o)})}
@@ -655,8 +695,9 @@ function closeSchedMenu(){$i('schedMenu').classList.remove('open')}
 $i('prevWeek').addEventListener('click',()=>{weekStart=addDays(weekStart,-7);render()});
 $i('nextWeek').addEventListener('click',()=>{weekStart=addDays(weekStart,7);render()});
 $i('todayBtn').addEventListener('click',()=>{weekStart=getMonday(new Date());render();scrollToNow()});
-$i('saveBtn').addEventListener('click',saveBlock);$i('skipBtn').addEventListener('click',skipBlock);
+$i('saveBtn').addEventListener('click',saveBlock);$i('skipBtn').addEventListener('click',skipBlock);$i('copyBtn').addEventListener('click',copyBlock);
 $i('cancelBtn').addEventListener('click',closeModal);$i('deleteBtn').addEventListener('click',deleteBlock);
+$i('undoBtn').addEventListener('click',undo);$i('redoBtn').addEventListener('click',redo);
 modal.addEventListener('click',e=>{if(e.target===modal)closeModal()});
 $i('daySelect').addEventListener('change',updateModalTime);
 $i('startTime').addEventListener('change',updateModalTime);$i('endTime').addEventListener('change',updateModalTime);
@@ -668,6 +709,8 @@ document.addEventListener('click',e=>{if(!e.target.closest('.sched-ctrl'))closeS
 $i('logoutBtn').addEventListener('click',async()=>{await sb.auth.signOut();location.reload()});
 
 document.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.shiftKey){e.preventDefault();undo();return}
+  if((e.ctrlKey||e.metaKey)&&(e.key==='y'||(e.key==='z'&&e.shiftKey)||(e.key==='Z'&&e.shiftKey))){e.preventDefault();redo();return}
   if(modal.classList.contains('active')){if(e.key==='Escape')closeModal();if(e.key==='Enter'&&!e.shiftKey&&e.target.tagName!=='SELECT'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();saveBlock()}return}
   if(e.target.tagName==='TEXTAREA')return;
   if(e.key==='ArrowLeft'){e.preventDefault();weekStart=addDays(weekStart,-7);render()}
