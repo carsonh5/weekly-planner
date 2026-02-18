@@ -100,7 +100,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 /* ─── Notes panel ─── */
 .notes-panel{width:220px;border-left:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;flex-shrink:0;transition:width .2s}
 .notes-panel.closed{width:0;overflow:hidden;border:none}
-.notes-head{padding:10px 14px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border-light);color:var(--text2);text-transform:uppercase;letter-spacing:.5px}
+.notes-head{padding:10px 14px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border-light);color:var(--text2);text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;justify-content:space-between}
+.notes-close{border:none;background:none;font-size:20px;color:var(--text3);cursor:pointer;padding:0 4px;line-height:1}
+.notes-close:hover{color:var(--text)}
 .notes-panel textarea{flex:1;border:none;padding:12px 14px;font-size:13px;font-family:inherit;color:var(--text);resize:none;outline:none;line-height:1.6;background:transparent}
 .notes-panel textarea::placeholder{color:var(--text3)}
 
@@ -296,8 +298,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
       <div class="time-grid" id="timeGrid"><div class="time-gutter" id="timeGutter"></div></div>
     </div>
   </div>
-  <div class="notes-panel" id="notesPanel">
-    <div class="notes-head">Week Notes</div>
+  <div class="notes-panel closed" id="notesPanel">
+    <div class="notes-head">Week Notes<button class="notes-close" id="notesClose">&times;</button></div>
     <textarea id="weekNotes" placeholder="Notes for this week..."></textarea>
   </div>
 </div>
@@ -571,7 +573,20 @@ function buildGrid(){
     for(let h=0;h<=TOTAL_H;h++){const line=document.createElement('div');line.className='hour-line'+(h>0?' major':'');line.style.top=(h*HOUR_H)+'px';col.appendChild(line)}
     const tl=document.createElement('div');tl.className='time-line';tl.style.display='none';tl.dataset.timeLine='1';col.appendChild(tl);
     col.addEventListener('mousedown',e=>startDrag(e,d,col));
-    col.addEventListener('touchstart',e=>{e.preventDefault();startDrag(e.touches[0],d,col)},{passive:false});
+    col.addEventListener('touchstart',e=>{
+      if(isMobile()){col._ts={x:e.touches[0].clientX,y:e.touches[0].clientY,t:Date.now()}}
+      else{e.preventDefault();startDrag(e.touches[0],d,col)}
+    },{passive:false});
+    col.addEventListener('touchend',e=>{
+      if(!isMobile()||!col._ts)return;
+      if(e.target.closest('.block')){col._ts=null;return}
+      const tc=e.changedTouches[0],dx=Math.abs(tc.clientX-col._ts.x),dy=Math.abs(tc.clientY-col._ts.y);
+      if(dx<10&&dy<10&&Date.now()-col._ts.t<300){
+        const yInCol=tc.clientY-col.getBoundingClientRect().top;
+        const min=yToMin(yInCol);openCreate(d,min,Math.min(END_H*60,min+60));
+      }
+      col._ts=null;
+    });
     timeGrid.appendChild(col);dayCols.push(col);
   }
   document.addEventListener('mousemove',onDragMove);document.addEventListener('mouseup',onDragEnd);
@@ -612,10 +627,21 @@ function renderBlocks(){
       else el.innerHTML=`<div class="block-title">${esc(b.title)}</div>`;
       const rh=document.createElement('div');rh.className='block-resize';
       rh.addEventListener('mousedown',e=>{e.stopPropagation();startResize(e,b,dayIdx,col)});
-      rh.addEventListener('touchstart',e=>{e.stopPropagation();e.preventDefault();startResize(e.touches[0],b,dayIdx,col)},{passive:false});
+      rh.addEventListener('touchstart',e=>{if(isMobile())return;e.stopPropagation();e.preventDefault();startResize(e.touches[0],b,dayIdx,col)},{passive:false});
       el.appendChild(rh);
       el.addEventListener('mousedown',e=>{if(!e.target.closest('.block-resize')){e.stopPropagation();startMoveOrClick(e,b,dayIdx,el)}});
-      el.addEventListener('touchstart',e=>{if(!e.target.closest('.block-resize')){e.stopPropagation();e.preventDefault();startMoveOrClick(e.touches[0],b,dayIdx,el)}},{passive:false});
+      el.addEventListener('touchstart',e=>{
+        if(!e.target.closest('.block-resize')){
+          if(isMobile()){el._ts={x:e.touches[0].clientX,y:e.touches[0].clientY,t:Date.now()}}
+          else{e.stopPropagation();e.preventDefault();startMoveOrClick(e.touches[0],b,dayIdx,el)}
+        }
+      },{passive:false});
+      el.addEventListener('touchend',e=>{
+        if(!isMobile()||!el._ts)return;
+        const tc=e.changedTouches[0],dx=Math.abs(tc.clientX-el._ts.x),dy=Math.abs(tc.clientY-el._ts.y);
+        if(dx<10&&dy<10&&Date.now()-el._ts.t<300)openEdit(b);
+        el._ts=null;
+      });
       col.appendChild(el);
     });
   });
@@ -632,14 +658,13 @@ $i('weekNotes').addEventListener('input',e=>{
   data.notes[weekKey(weekStart)]=e.target.value;
   clearTimeout(noteTimer);noteTimer=setTimeout(()=>save(),500);
 });
-$i('notesToggleBtn').addEventListener('click',()=>{
-  $i('notesPanel').classList.toggle('closed');
-  localStorage.setItem('notesPanelOpen',$i('notesPanel').classList.contains('closed')?'0':'1');
-});
+function toggleNotes(){$i('notesPanel').classList.toggle('closed');localStorage.setItem('notesPanelOpen',$i('notesPanel').classList.contains('closed')?'0':'1')}
+$i('notesToggleBtn').addEventListener('click',toggleNotes);
+$i('notesClose').addEventListener('click',()=>{$i('notesPanel').classList.add('closed');localStorage.setItem('notesPanelOpen','0')});
 
 /* ═══════════════ DRAG TO MOVE ═══════════════ */
 const MOVE_THRESHOLD=5;
-function startMoveOrClick(e,block,dayIdx,el){moveState={block,duration:block.endMin-block.startMin,startX:e.clientX,startY:e.clientY,ghost:null,placeholder:null,moved:false,el}}
+function startMoveOrClick(e,block,dayIdx,el){if(isMobile())return;moveState={block,duration:block.endMin-block.startMin,startX:e.clientX,startY:e.clientY,ghost:null,placeholder:null,moved:false,el}}
 function onMoveMove(e){
   if(!moveState)return;const dx=e.clientX-moveState.startX,dy=e.clientY-moveState.startY;
   if(!moveState.moved&&Math.abs(dx)<MOVE_THRESHOLD&&Math.abs(dy)<MOVE_THRESHOLD)return;
@@ -671,12 +696,13 @@ function onMoveEnd(){
 
 /* ═══════════════ DRAG TO CREATE ═══════════════ */
 function startDrag(e,day,col){
+  if(isMobile())return;
   if(e.target&&e.target.closest&&e.target.closest('.block'))return;
   const y=e.clientY-col.getBoundingClientRect().top,startMin=yToMin(y);
   const preview=document.createElement('div');preview.className='drag-preview';col.appendChild(preview);
   drag={type:'create',day,startMin,curMin:startMin,col,preview};updateDragPreview();
 }
-function startResize(e,block,day,col){drag={type:'resize',block,day,col,origEnd:block.endMin};e.preventDefault&&e.preventDefault()}
+function startResize(e,block,day,col){if(isMobile())return;drag={type:'resize',block,day,col,origEnd:block.endMin};e.preventDefault&&e.preventDefault()}
 function onDragMove(e){
   if(!drag)return;const y=e.clientY-drag.col.getBoundingClientRect().top;
   if(drag.type==='create'){drag.curMin=yToMin(y);updateDragPreview()}
@@ -828,7 +854,7 @@ function exitMobileMode(){
 
 /* Mobile toolbar events */
 $i('mobToday').addEventListener('click',()=>{weekStart=getMonday(new Date());render();if(isMobile()){const ti=todayIdx();setMobileDay(ti>=0?ti:0)}scrollToNow()});
-$i('mobNotes').addEventListener('click',()=>{$i('notesPanel').classList.toggle('closed');localStorage.setItem('notesPanelOpen',$i('notesPanel').classList.contains('closed')?'0':'1')});
+$i('mobNotes').addEventListener('click',toggleNotes);
 $i('mobSchedule').addEventListener('click',()=>{
   const names=Object.keys(data.schedules);if(names.length<=1)return;
   const next=names[(names.indexOf(data.activeSchedule)+1)%names.length];
@@ -853,9 +879,9 @@ async function initApp(){
   buildGrid();
   const savedZoom=localStorage.getItem('weekPlannerZoom');
   if(savedZoom)setZoom(+savedZoom,false);else $i('zoomPct').textContent='100%';
-  // Notes panel state
-  if(localStorage.getItem('notesPanelOpen')==='0')$i('notesPanel').classList.add('closed');
-  // Mobile: start on today, close notes by default
+  // Notes panel: closed by default (HTML has .closed), open if saved preference
+  if(localStorage.getItem('notesPanelOpen')==='1')$i('notesPanel').classList.remove('closed');
+  // Mobile: start on today
   if(isMobile()){
     const ti=todayIdx();mobileDay=ti>=0?ti:0;
     $i('notesPanel').classList.add('closed');
