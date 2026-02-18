@@ -98,6 +98,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .time-line::before{content:'';position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:50%;background:#D44}
 
 /* ─── Notes panel ─── */
+.notes-backdrop{display:none}
+.notes-drag-bar{display:none}
 .notes-panel{width:220px;border-left:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;flex-shrink:0;transition:width .2s}
 .notes-panel.closed{width:0;overflow:hidden;border:none}
 .notes-head{padding:10px 14px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border-light);color:var(--text2);text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;justify-content:space-between}
@@ -140,6 +142,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .toggle input:checked+.toggle-track{background:var(--accent)}
 .toggle-knob{position:absolute;top:2px;left:2px;width:18px;height:18px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.15)}
 .toggle input:checked~.toggle-knob{transform:translateX(16px)}
+
+/* ─── Checklist ─── */
+.checklist-section{display:none;margin-top:2px}
+.checklist-section.visible{display:block}
+.checklist-items{list-style:none;margin:0 0 8px;max-height:200px;overflow-y:auto}
+.checklist-items li{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-light)}
+.checklist-items li:last-child{border-bottom:none}
+.checklist-items input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent);cursor:pointer;flex-shrink:0}
+.checklist-items .item-text{flex:1;font-size:13px;color:var(--text)}
+.checklist-items .item-text.done{text-decoration:line-through;color:var(--text3)}
+.checklist-items .item-del{border:none;background:none;color:var(--text3);cursor:pointer;font-size:16px;padding:0 4px;line-height:1;flex-shrink:0}
+.checklist-items .item-del:hover{color:#c44}
+.checklist-add{display:flex;gap:6px}
+.checklist-add input{flex:1;height:34px;padding:0 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;color:var(--text);outline:none}
+.checklist-add input:focus{border-color:var(--accent)}
+.checklist-add button{height:34px;padding:0 12px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;white-space:nowrap}
+.block-checklist-count{font-size:9px;opacity:.7;margin-top:1px}
+
 .modal-foot{display:flex;justify-content:space-between;padding:12px 20px 16px;gap:8px}
 .modal-foot .left{display:flex;gap:6px}
 .modal-foot .right{display:flex;gap:8px}
@@ -204,11 +224,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
   .block-resize{height:14px}
 
   /* Notes panel: bottom sheet overlay */
-  .notes-panel{position:fixed;bottom:0;left:0;right:0;top:auto;width:100% !important;height:50vh;z-index:90;border-left:none;border-top:1px solid var(--border);border-radius:16px 16px 0 0;box-shadow:0 -8px 32px rgba(0,0,0,.15)}
+  .notes-backdrop{display:block;position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:89;opacity:0;pointer-events:none;transition:opacity .3s}
+  .notes-backdrop.visible{opacity:1;pointer-events:all}
+  .notes-panel{position:fixed;bottom:0;left:0;right:0;top:auto;width:100% !important;height:55vh;z-index:90;border-left:none;border-top:none;border-radius:16px 16px 0 0;box-shadow:0 -8px 32px rgba(0,0,0,.15)}
   .notes-panel.closed{transform:translateY(100%);pointer-events:none;opacity:0}
   .notes-panel:not(.closed){transform:translateY(0);pointer-events:all;opacity:1}
   .notes-panel{transition:transform .3s,opacity .2s}
-  .notes-head{padding:12px 16px;font-size:13px}
+  .notes-drag-bar{display:flex;justify-content:center;padding:10px 0 4px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .notes-drag-pill{width:36px;height:4px;background:var(--border);border-radius:2px}
+  .notes-head{padding:6px 16px 10px;font-size:13px}
   .notes-panel textarea{font-size:15px;padding:14px 16px}
 
   /* Modal: slide up from bottom */
@@ -299,7 +323,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
       <div class="time-grid" id="timeGrid"><div class="time-gutter" id="timeGutter"></div></div>
     </div>
   </div>
+  <div class="notes-backdrop" id="notesBackdrop"></div>
   <div class="notes-panel closed" id="notesPanel">
+    <div class="notes-drag-bar" id="notesDragClose"><div class="notes-drag-pill"></div></div>
     <div class="notes-head">Week Notes<button class="notes-close" id="notesClose">&times;</button></div>
     <textarea id="weekNotes" placeholder="Notes for this week..."></textarea>
   </div>
@@ -344,6 +370,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
         <div class="toggle-row">
           <label class="toggle"><input type="checkbox" id="recurToggle"><div class="toggle-track"></div><div class="toggle-knob"></div></label>
           <span>Repeats every week</span>
+        </div>
+      </div>
+      <div class="checklist-section" id="checklistSection">
+        <label style="display:block;font-size:12px;font-weight:500;color:var(--text2);margin-bottom:5px">Shopping List</label>
+        <ul class="checklist-items" id="checklistItems"></ul>
+        <div class="checklist-add">
+          <input type="text" id="checklistInput" placeholder="Add item..." autocomplete="off">
+          <button type="button" id="checklistAddBtn">Add</button>
         </div>
       </div>
     </div>
@@ -422,7 +456,7 @@ const COLOR_PRESETS=[
 const DEFAULT_CATS=[
   {id:'class',label:'Class',colorIdx:0},{id:'work',label:'Work',colorIdx:1},
   {id:'study',label:'Study',colorIdx:2},{id:'personal',label:'Personal',colorIdx:3},
-  {id:'exercise',label:'Exercise',colorIdx:4},
+  {id:'exercise',label:'Exercise',colorIdx:4},{id:'shopping',label:'Shopping',colorIdx:5},
 ];
 const DEFAULT_BLOCKS=[
   {id:uid(),title:'MBAX 6650',day:0,startMin:840,endMin:1005,category:'class',location:'KOBL 322'},
@@ -467,6 +501,12 @@ function blocksForDay(day){
   return[...r.map(b=>({...b,_recurring:true})),...w.map(b=>({...b,_recurring:false}))];
 }
 
+function ensureDefaultCats(cats){
+  const ids=new Set(cats.map(c=>c.id));
+  DEFAULT_CATS.forEach(dc=>{if(!ids.has(dc.id))cats.push({...dc})});
+  return cats;
+}
+
 /* Save: localStorage immediately, debounced Supabase */
 let saveTimer=null;
 function pushUndo(){undoStack.push(JSON.stringify(data));if(undoStack.length>MAX_UNDO)undoStack.shift();redoStack=[];updateUndoBtns()}
@@ -490,7 +530,7 @@ async function loadData(){
     const{data:row}=await sb.from('planner_data').select('data').eq('id','default').single();
     if(row&&row.data&&row.data.schedules){
       // Merge missing defaults
-      if(!row.data.categories) row.data.categories=[...DEFAULT_CATS];
+      row.data.categories=ensureDefaultCats(row.data.categories||[]);
       if(!row.data.notes) row.data.notes={};
       if(!row.data.skips) row.data.skips={};
       localStorage.setItem('weekPlanner',JSON.stringify(row.data));
@@ -501,7 +541,7 @@ async function loadData(){
   try{
     const d=JSON.parse(localStorage.getItem('weekPlanner'));
     if(d&&d.schedules){
-      if(!d.categories) d.categories=[...DEFAULT_CATS];
+      d.categories=ensureDefaultCats(d.categories||[]);
       if(!d.notes) d.notes={};
       if(!d.skips) d.skips={};
       return d;
@@ -564,6 +604,29 @@ function addCategory(){
 $i('catNewSave').addEventListener('click',addCategory);
 $i('catNewName').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addCategory()}});
 
+/* ═══════════════ CHECKLIST (Shopping) ═══════════════ */
+let editChecklist=[];
+function isShoppingCat(){return getCategory()==='shopping'}
+function updateChecklistVisibility(){$i('checklistSection').classList.toggle('visible',isShoppingCat())}
+function renderChecklist(){
+  const ul=$i('checklistItems');ul.innerHTML='';
+  editChecklist.forEach((item,i)=>{
+    const li=document.createElement('li');
+    const cb=document.createElement('input');cb.type='checkbox';cb.checked=item.done;
+    cb.addEventListener('change',()=>{editChecklist[i].done=cb.checked;renderChecklist()});
+    const sp=document.createElement('span');sp.className='item-text'+(item.done?' done':'');sp.textContent=item.text;
+    const del=document.createElement('button');del.className='item-del';del.textContent='\u00d7';del.type='button';
+    del.addEventListener('click',()=>{editChecklist.splice(i,1);renderChecklist()});
+    li.appendChild(cb);li.appendChild(sp);li.appendChild(del);ul.appendChild(li);
+  });
+}
+function addChecklistItem(){
+  const inp=$i('checklistInput'),txt=inp.value.trim();if(!txt)return;
+  editChecklist.push({text:txt,done:false});inp.value='';renderChecklist();inp.focus();
+}
+$i('checklistAddBtn').addEventListener('click',addChecklistItem);
+$i('checklistInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addChecklistItem()}});
+
 /* ═══════════════ BUILD GRID ═══════════════ */
 function buildGrid(){
   DAYS.forEach((_,i)=>{const dh=document.createElement('div');dh.className='day-header';dh.innerHTML='<div class="day-name"></div><div class="day-num"></div>';dh.addEventListener('click',()=>{if(isMobile())setMobileDay(i)});dayHeadersEl.appendChild(dh);dayHeaderEls.push(dh)});
@@ -624,8 +687,10 @@ function renderBlocks(){
       const top=minToY(b.startMin),h=minToY(b.endMin)-top;const w=100/b._numCols,l=b._col*w;
       el.style.top=top+'px';el.style.height=Math.max(h,SNAP/60*HOUR_H)+'px';el.style.left=`calc(${l}% + 2px)`;el.style.width=`calc(${w}% - 4px)`;
       const ts=`${fmtTime(b.startMin)} – ${fmtTime(b.endMin)}`;
-      if(h>=50)el.innerHTML=`<div class="block-title">${esc(b.title)}</div><div class="block-time">${ts}</div>${b.location?`<div class="block-loc">${esc(b.location)}</div>`:''}`;
-      else if(h>=30)el.innerHTML=`<div class="block-title">${esc(b.title)}</div><div class="block-time">${ts}</div>`;
+      const cl=b.checklist&&b.checklist.length?b.checklist:null;
+      const clStr=cl?`<div class="block-checklist-count">${cl.filter(i=>i.done).length}/${cl.length} items</div>`:'';
+      if(h>=50)el.innerHTML=`<div class="block-title">${esc(b.title)}</div><div class="block-time">${ts}</div>${b.location?`<div class="block-loc">${esc(b.location)}</div>`:''}${clStr}`;
+      else if(h>=30)el.innerHTML=`<div class="block-title">${esc(b.title)}</div><div class="block-time">${ts}</div>${clStr}`;
       else el.innerHTML=`<div class="block-title">${esc(b.title)}</div>`;
       const rh=document.createElement('div');rh.className='block-resize';
       rh.addEventListener('mousedown',e=>{e.stopPropagation();startResize(e,b,dayIdx,col)});
@@ -661,9 +726,13 @@ $i('weekNotes').addEventListener('input',e=>{
   data.notes[weekKey(weekStart)]=e.target.value;
   clearTimeout(noteTimer);noteTimer=setTimeout(()=>save(),500);
 });
-function toggleNotes(){$i('notesPanel').classList.toggle('closed');localStorage.setItem('notesPanelOpen',$i('notesPanel').classList.contains('closed')?'0':'1')}
+function closeNotes(){$i('notesPanel').classList.add('closed');$i('notesBackdrop').classList.remove('visible');localStorage.setItem('notesPanelOpen','0')}
+function openNotes(){$i('notesPanel').classList.remove('closed');if(isMobile())$i('notesBackdrop').classList.add('visible');localStorage.setItem('notesPanelOpen','1')}
+function toggleNotes(){$i('notesPanel').classList.contains('closed')?openNotes():closeNotes()}
 $i('notesToggleBtn').addEventListener('click',toggleNotes);
-$i('notesClose').addEventListener('click',()=>{$i('notesPanel').classList.add('closed');localStorage.setItem('notesPanelOpen','0')});
+$i('notesClose').addEventListener('click',closeNotes);
+$i('notesBackdrop').addEventListener('click',closeNotes);
+$i('notesDragClose').addEventListener('click',closeNotes);
 
 /* ═══════════════ DRAG TO MOVE ═══════════════ */
 const MOVE_THRESHOLD=5;
@@ -727,11 +796,13 @@ function openCreate(day,startMin,endMin){
     $i('blockTitle').value=clipboard.title;$i('blockLocation').value=clipboard.location;
     setCategory(clipboard.category);
     endMin=Math.min(END_H*60,startMin+clipboard.duration);
-  }else{$i('blockTitle').value='';$i('blockLocation').value='';setCategory('personal')}
+    editChecklist=clipboard.checklist?clipboard.checklist.map(i=>({...i})):[];
+  }else{$i('blockTitle').value='';$i('blockLocation').value='';setCategory('personal');editChecklist=[]}
   $i('daySelect').value=day;
   $i('startTime').value=minToTimeVal(startMin);$i('endTime').value=minToTimeVal(endMin);
   $i('recurToggle').checked=false;
   $i('deleteBtn').style.display='none';$i('skipBtn').style.display='none';$i('copyBtn').style.display='none';
+  renderChecklist();updateChecklistVisibility();
   updateModalTime();modal.classList.add('active');setTimeout(()=>$i('blockTitle').focus(),100);
 }
 function openEdit(b){
@@ -739,12 +810,14 @@ function openEdit(b){
   $i('blockTitle').value=b.title;$i('blockLocation').value=b.location||'';$i('daySelect').value=b.day;
   $i('startTime').value=minToTimeVal(b.startMin);$i('endTime').value=minToTimeVal(b.endMin);
   setCategory(b.category);$i('recurToggle').checked=!!b._recurring;
+  editChecklist=(b.checklist||[]).map(i=>({...i}));
   $i('deleteBtn').style.display='';$i('skipBtn').style.display=b._recurring?'':'none';$i('copyBtn').style.display='';
   $i('deleteBtn').textContent=b._recurring?'Delete all':'Delete';
+  renderChecklist();updateChecklistVisibility();
   updateModalTime();modal.classList.add('active');$i('blockTitle').focus();
 }
 function updateModalTime(){const day=+$i('daySelect').value,s=timeValToMin($i('startTime').value),e=timeValToMin($i('endTime').value);$i('modalTime').textContent=`${FULL_DAYS[day]}, ${fmtDate(addDays(weekStart,day))} · ${fmtTime(s)} – ${fmtTime(e)}`}
-function setCategory(cat){document.querySelectorAll('.cat-btn').forEach(btn=>btn.classList.toggle('sel',btn.dataset.cat===cat))}
+function setCategory(cat){document.querySelectorAll('.cat-btn').forEach(btn=>btn.classList.toggle('sel',btn.dataset.cat===cat));updateChecklistVisibility()}
 function getCategory(){const s=document.querySelector('.cat-btn.sel');return s?s.dataset.cat:'personal'}
 function closeModal(){modal.classList.remove('active');editing=null}
 
@@ -753,12 +826,14 @@ function saveBlock(){
   const day=+$i('daySelect').value,startMin=timeValToMin($i('startTime').value),endMin=timeValToMin($i('endTime').value),isRecur=$i('recurToggle').checked;
   if(endMin<=startMin){alert('End time must be after start time');return}
   pushUndo();
+  const checklist=category==='shopping'?editChecklist:undefined;
   if(editing.mode==='create'){
     const block={id:uid(),title,location,day,startMin,endMin,category};
+    if(checklist)block.checklist=checklist;
     if(isRecur)recurring().push(block);else{const wk=weekKey(weekStart);if(!data.weeks[wk])data.weeks[wk]=[];data.weeks[wk].push(block)}
   }else{
     const b=editing.block,list=b._recurring?recurring():(data.weeks[weekKey(weekStart)]||[]),t=list.find(x=>x.id===b.id);
-    if(t){t.title=title;t.location=location;t.day=day;t.startMin=startMin;t.endMin=endMin;t.category=category}
+    if(t){t.title=title;t.location=location;t.day=day;t.startMin=startMin;t.endMin=endMin;t.category=category;t.checklist=checklist||undefined}
     if(b._recurring&&!isRecur){setRecurring(recurring().filter(x=>x.id!==b.id));const wk=weekKey(weekStart);if(!data.weeks[wk])data.weeks[wk]=[];data.weeks[wk].push({id:b.id,title,location,day,startMin,endMin,category})}
     else if(!b._recurring&&isRecur){const wk=weekKey(weekStart);if(data.weeks[wk])data.weeks[wk]=data.weeks[wk].filter(x=>x.id!==b.id);recurring().push({id:b.id,title,location,day,startMin,endMin,category})}
   }
@@ -771,7 +846,7 @@ function deleteBlock(){if(!editing||editing.mode!=='edit')return;pushUndo();cons
 function copyBlock(){
   if(!editing||editing.mode!=='edit')return;
   const b=editing.block;
-  clipboard={title:b.title,location:b.location||'',category:b.category,duration:b.endMin-b.startMin};
+  clipboard={title:b.title,location:b.location||'',category:b.category,duration:b.endMin-b.startMin,checklist:b.checklist?b.checklist.map(i=>({...i})):null};
   showToast('Block copied');closeModal();
 }
 function showToast(msg){const t=$i('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800)}
