@@ -210,14 +210,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 
   /* Grid: single column */
   .grid-wrapper{height:calc(100vh - 90px - 48px)}
-  .grid-scroll{touch-action:pan-y}
+  .grid-scroll{touch-action:manipulation}
   .time-grid{grid-template-columns:var(--time-w) 1fr !important}
   .day-col{display:none !important}
-  .day-col.active-mobile{display:block !important;grid-column:2 !important;touch-action:pan-y}
+  .day-col.active-mobile{display:block !important;grid-column:2 !important;touch-action:manipulation}
   .time-label{font-size:9px;right:4px}
 
   /* Blocks: bigger touch targets */
-  .block{padding:5px 8px;border-left-width:4px;border-radius:8px;touch-action:pan-y}
+  .block{padding:5px 8px;border-left-width:4px;border-radius:8px;touch-action:manipulation;min-height:28px}
   .block-title{font-size:13px;font-weight:600}
   .block-time{font-size:11px;margin-top:2px}
   .block-loc{font-size:11px}
@@ -334,9 +334,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 
 <div class="mobile-toolbar" id="mobileToolbar">
   <button id="mobToday"><span>&#x2302;</span>Today</button>
+  <button id="mobZoomOut"><span>&#8722;</span>Zoom -</button>
+  <button id="mobFit"><span>&#x2922;</span>Fit</button>
+  <button id="mobZoomIn"><span>+</span>Zoom +</button>
   <button id="mobNotes"><span>&#9998;</span>Notes</button>
-  <button id="mobSchedule"><span>&#9776;</span>Schedule</button>
-  <button id="mobLogout"><span>&#x2192;</span>Log out</button>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -646,7 +647,7 @@ function buildGrid(){
       if(!isMobile()||!col._ts)return;
       if(e.target.closest('.block')){col._ts=null;return}
       const tc=e.changedTouches[0],dx=Math.abs(tc.clientX-col._ts.x),dy=Math.abs(tc.clientY-col._ts.y);
-      if(dx<10&&dy<10&&Date.now()-col._ts.t<300){
+      if(dx<20&&dy<20&&Date.now()-col._ts.t<300){
         const yInCol=tc.clientY-col.getBoundingClientRect().top;
         const min=yToMin(yInCol);openCreate(d,min,Math.min(END_H*60,min+60));
       }
@@ -707,7 +708,7 @@ function renderBlocks(){
         lastTouchEnd=Date.now();
         if(!isMobile()||!el._ts)return;
         const tc=e.changedTouches[0],dx=Math.abs(tc.clientX-el._ts.x),dy=Math.abs(tc.clientY-el._ts.y);
-        if(dx<10&&dy<10&&Date.now()-el._ts.t<300)openEdit(b);
+        if(dx<20&&dy<20&&Date.now()-el._ts.t<300)openEdit(b);
         el._ts=null;
       });
       col.appendChild(el);
@@ -933,18 +934,28 @@ function exitMobileMode(){
 /* Mobile toolbar events */
 $i('mobToday').addEventListener('click',()=>{weekStart=getMonday(new Date());render();if(isMobile()){const ti=todayIdx();setMobileDay(ti>=0?ti:0)}scrollToNow()});
 $i('mobNotes').addEventListener('click',toggleNotes);
-$i('mobSchedule').addEventListener('click',()=>{
-  const names=Object.keys(data.schedules);if(names.length<=1)return;
-  const next=names[(names.indexOf(data.activeSchedule)+1)%names.length];
-  switchSchedule(next);showToast('Schedule: '+next);
-});
-$i('mobLogout').addEventListener('click',async()=>{await sb.auth.signOut();location.reload()});
+$i('mobZoomOut').addEventListener('click',()=>setZoom(HOUR_H-ZOOM_STEP,true));
+$i('mobZoomIn').addEventListener('click',()=>setZoom(HOUR_H+ZOOM_STEP,true));
+$i('mobFit').addEventListener('click',fitZoom);
 
 /* Swipe on grid to change day */
 let swipeX=0,swipeY=0,swiping=false;
 gridScroll.addEventListener('touchstart',e=>{if(!isMobile()||drag||moveState)return;swipeX=e.touches[0].clientX;swipeY=e.touches[0].clientY;swiping=true},{passive:true});
 gridScroll.addEventListener('touchmove',e=>{if(!swiping)return;const dx=Math.abs(e.touches[0].clientX-swipeX),dy=Math.abs(e.touches[0].clientY-swipeY);if(dy>dx)swiping=false},{passive:true});
 gridScroll.addEventListener('touchend',e=>{if(!swiping||!isMobile())return;swiping=false;const dx=e.changedTouches[0].clientX-swipeX;if(Math.abs(dx)>60){if(dx<0&&mobileDay<6)setMobileDay(mobileDay+1);else if(dx>0&&mobileDay>0)setMobileDay(mobileDay-1)}},{passive:true});
+
+/* Pinch to zoom on mobile */
+let pinchDist=0,pinchZoom=0;
+gridScroll.addEventListener('touchstart',e=>{
+  if(e.touches.length===2){pinchDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);pinchZoom=HOUR_H}
+},{passive:true});
+gridScroll.addEventListener('touchmove',e=>{
+  if(e.touches.length===2&&pinchDist>0){
+    const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    setZoom(pinchZoom*(d/pinchDist),true);
+  }
+},{passive:true});
+gridScroll.addEventListener('touchend',()=>{pinchDist=0},{passive:true});
 
 /* ═══════════════ INIT ═══════════════ */
 function scrollToNow(){const min=new Date().getHours()*60+new Date().getMinutes();gridScroll.scrollTop=minToY(Math.max(START_H*60,min-60))}
