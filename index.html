@@ -210,14 +210,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 
   /* Grid: single column */
   .grid-wrapper{height:calc(100vh - 90px - 48px)}
-  .grid-scroll{touch-action:manipulation}
+  .grid-scroll{touch-action:pan-y}
   .time-grid{grid-template-columns:var(--time-w) 1fr !important}
   .day-col{display:none !important}
-  .day-col.active-mobile{display:block !important;grid-column:2 !important;touch-action:manipulation}
+  .day-col.active-mobile{display:block !important;grid-column:2 !important;touch-action:pan-y}
   .time-label{font-size:9px;right:4px}
 
   /* Blocks: bigger touch targets */
-  .block{padding:5px 8px;border-left-width:4px;border-radius:8px;touch-action:manipulation;min-height:28px}
+  .block{padding:5px 8px;border-left-width:4px;border-radius:8px;touch-action:pan-y;min-height:28px}
   .block-title{font-size:13px;font-weight:600}
   .block-time{font-size:11px;margin-top:2px}
   .block-loc{font-size:11px}
